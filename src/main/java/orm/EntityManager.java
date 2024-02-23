@@ -45,21 +45,7 @@ public class EntityManager<E> implements DatabaseContext<E> {
 
     @Override
     public Iterable<E> find(Class<E> table, String where) throws SQLException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
-        String fieldList = "*";
-        String tableName = getTableName(table);
-        String whereClause = where == null ? "" : "WHERE" + where;
-
-        String selectStatement = String.format(SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE, fieldList, tableName, whereClause);
-
-        PreparedStatement preparedStatement = connection.prepareStatement(selectStatement);
-        ResultSet resultSet = preparedStatement.executeQuery();
-
-        List<E> result = new ArrayList<>();
-        while (resultSet.next()) {
-            E current = generateEntity(table, resultSet);
-            result.add(current);
-        }
-        return result;
+        return baseFind(table, where, null);
     }
 
     private E generateEntity(Class<E> table, ResultSet resultSet) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, SQLException {
@@ -84,24 +70,50 @@ public class EntityManager<E> implements DatabaseContext<E> {
             long value = resultSet.getLong(dbFieldName);
             declaredField.setLong(result, value);
         } else if (javaType == LocalDate.class) {
-            Date value = resultSet.getDate(dbFieldName);
+            LocalDate value = resultSet.getObject(dbFieldName, LocalDate.class);
             declaredField.set(result, value);
         } else if (javaType == String.class) {
             String value = resultSet.getString(dbFieldName);
             declaredField.set(result, value);
+        } else {
+            throw new RuntimeException("Unsupported type" + javaType);
         }
-
-        throw new RuntimeException("Unsupported type" + javaType);
     }
 
     @Override
-    public E findFirst(Class<E> table) {
+    public E findFirst(Class<E> table) throws SQLException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
         return findFirst(table, null);
     }
 
     @Override
-    public E findFirst(Class<E> table, String where) {
-        return null;
+    public E findFirst(Class<E> table, String where) throws SQLException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        List<E> result = baseFind(table, where, 1);
+
+        if (result.isEmpty()){
+            return null;
+        }
+        return result.get(0);
+    }
+    private List<E> baseFind(Class<E> table, String where, Integer limit) throws SQLException, NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+        String fieldList = "*";
+        String tableName = getTableName(table);
+        String whereClause = where == null ? "" : "WHERE" + where;
+        String limitClause = limit == null ? "" : " LIMIT" + limit;
+
+        String selectStatement = String.format(SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE,
+                fieldList,
+                tableName,
+                whereClause + limitClause);
+
+        PreparedStatement preparedStatement = connection.prepareStatement(selectStatement);
+        ResultSet resultSet = preparedStatement.executeQuery();
+
+        List<E> result = new ArrayList<>();
+        while (resultSet.next()) {
+            E current = generateEntity(table, resultSet);
+            result.add(current);
+        }
+        return result;
     }
 
     private boolean doUpdate(E entity, Field idColumn, Object idValue) throws IllegalAccessException, SQLException {
