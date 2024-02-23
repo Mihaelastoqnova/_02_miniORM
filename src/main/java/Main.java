@@ -16,6 +16,9 @@ public class Main {
 
         userEntityManager.persist(pesho);
 
+        Iterable users = userEntityManager.find(User.class, "age > 40");
+
+        System.out.println(users.iterator().next());
 
     }
 }
