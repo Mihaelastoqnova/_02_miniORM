@@ -5,10 +5,14 @@ import orm.annotation.Entity;
 import orm.annotation.Id;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class EntityManager<E> implements DatabaseContext<E> {
@@ -35,23 +39,64 @@ public class EntityManager<E> implements DatabaseContext<E> {
     }
 
     @Override
-    public Iterable<E> find(Class<E> table) {
-
-        return null;
+    public Iterable<E> find(Class<E> table) throws SQLException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
+        return find(table, null);
     }
 
     @Override
-    public Iterable<E> find(Class<E> table, String where) {
+    public Iterable<E> find(Class<E> table, String where) throws SQLException, InvocationTargetException, NoSuchMethodException, InstantiationException, IllegalAccessException {
         String fieldList = "*";
         String tableName = getTableName(table);
+        String whereClause = where == null ? "" : "WHERE" + where;
 
-        String.format(SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE, fieldList, tableName, whereClause);
-        return null;
+        String selectStatement = String.format(SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE, fieldList, tableName, whereClause);
+
+        PreparedStatement preparedStatement = connection.prepareStatement(selectStatement);
+        ResultSet resultSet = preparedStatement.executeQuery();
+
+        List<E> result = new ArrayList<>();
+        while (resultSet.next()) {
+            E current = generateEntity(table, resultSet);
+            result.add(current);
+        }
+        return result;
+    }
+
+    private E generateEntity(Class<E> table, ResultSet resultSet) throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException, SQLException {
+        E result = table.getDeclaredConstructor().newInstance();
+        Field[] declaredFields = table.getDeclaredFields();
+
+        for (Field declaredField : declaredFields) {
+            fillField(result, declaredField, resultSet);
+        }
+        return result;
+    }
+
+    private void fillField(E result, Field declaredField, ResultSet resultSet) throws SQLException, IllegalAccessException {
+        String dbFieldName = declaredField.getAnnotation(Column.class).name();
+        Class<?> javaType = declaredField.getType();
+        declaredField.setAccessible(true);
+
+        if (javaType == int.class || javaType == Integer.class) {
+            int value = resultSet.getInt(dbFieldName);
+            declaredField.setInt(result, value);
+        } else if (javaType == long.class || javaType == Long.class) {
+            long value = resultSet.getLong(dbFieldName);
+            declaredField.setLong(result, value);
+        } else if (javaType == LocalDate.class) {
+            Date value = resultSet.getDate(dbFieldName);
+            declaredField.set(result, value);
+        } else if (javaType == String.class) {
+            String value = resultSet.getString(dbFieldName);
+            declaredField.set(result, value);
+        }
+
+        throw new RuntimeException("Unsupported type" + javaType);
     }
 
     @Override
     public E findFirst(Class<E> table) {
-        return null;
+        return findFirst(table, null);
     }
 
     @Override
@@ -145,6 +190,15 @@ public class EntityManager<E> implements DatabaseContext<E> {
 
     private String getTableName(E entity) {
         Entity annotation = entity.getClass().getAnnotation(Entity.class);
+        if (annotation == null) {
+            throw new RuntimeException("No Entity annotation present");
+        }
+        return annotation.name();
+    }
+
+    // Fix
+    private String getTableName(Class<E> clazz) {
+        Entity annotation = clazz.getClass().getAnnotation(Entity.class);
         if (annotation == null) {
             throw new RuntimeException("No Entity annotation present");
         }
