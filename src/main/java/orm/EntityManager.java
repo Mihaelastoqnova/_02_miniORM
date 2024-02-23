@@ -14,6 +14,7 @@ import java.util.List;
 public class EntityManager<E> implements DatabaseContext<E> {
     private static final String INSERT_TEMPLATE = "INSERT INTO %s (%s) VALUES (%s)";
     private static final String UPDATE_WITH_WHERE_TEMPLATE = "UPDATE %s SET %s WHERE %s";
+    private static final String SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE = "SELECT %s FROM %s %s";
     private Connection connection;
 
     public EntityManager(Connection connection) {
@@ -33,14 +34,49 @@ public class EntityManager<E> implements DatabaseContext<E> {
         return doUpdate(entity, idColumn, idValue);
     }
 
-    private boolean doUpdate(E entity, Field idColumn, Object idValue) throws IllegalAccessException {
+    @Override
+    public Iterable<E> find(Class<E> table) {
+
+        return null;
+    }
+
+    @Override
+    public Iterable<E> find(Class<E> table, String where) {
+        String fieldList = "*";
+        String tableName = getTableName(table);
+
+        String.format(SELECT_WITH_WHERE_PLACEHOLDER_TEMPLATE, fieldList, tableName, whereClause);
+        return null;
+    }
+
+    @Override
+    public E findFirst(Class<E> table) {
+        return null;
+    }
+
+    @Override
+    public E findFirst(Class<E> table, String where) {
+        return null;
+    }
+
+    private boolean doUpdate(E entity, Field idColumn, Object idValue) throws IllegalAccessException, SQLException {
         String tableName = getTableName(entity);
         List<String> columns = getColumnsWithoutId(entity);
         List<String> values = getColumnsValuesWithoutId(entity);
 
-        String.format(UPDATE_WITH_WHERE_TEMPLATE, tableName, columnsWithValues, idCondition);
+        List<String> columnsWithValues = new ArrayList<>();
+        for (int i = 0; i < columns.size(); i++) {
+            String s = columns.get(i) + "=" + values.get(i);
+            columnsWithValues.add(s);
+        }
 
-        return false;
+        String idCondition = String.format("%s=%s", idColumn.getName(), idValue.toString());
+
+        String updateQuery = String.format(UPDATE_WITH_WHERE_TEMPLATE, tableName,
+                String.join(",", columnsWithValues), idCondition);
+        PreparedStatement statement = connection.prepareStatement(updateQuery);
+        int updateCount = statement.executeUpdate();
+        return updateCount == 1;
     }
 
     private Field getIdColumn(E entity) {
@@ -68,25 +104,6 @@ public class EntityManager<E> implements DatabaseContext<E> {
         return changedRows == 1;
     }
 
-    @Override
-    public Iterable find(Class table) {
-        return null;
-    }
-
-    @Override
-    public Iterable find(Class table, String where) {
-        return null;
-    }
-
-    @Override
-    public Object findFirst(Class table) {
-        return null;
-    }
-
-    @Override
-    public Object findFirst(Class table, String where) {
-        return null;
-    }
 
     private List<String> getColumnsValuesWithoutId(E entity) throws IllegalAccessException {
         List<String> result = new ArrayList<>();
